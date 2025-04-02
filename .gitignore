@@ -1,0 +1,10 @@
+# DB data
+/project/db-data/
+
+# Built Binaries
+authApp
+brokerApp
+loggerApp
+
+# env
+.env

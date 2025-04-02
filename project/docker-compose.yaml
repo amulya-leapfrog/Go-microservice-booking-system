@@ -1,0 +1,64 @@
+version: '3'
+
+services:
+  broker-svc:
+    build:
+      context: ./../broker-svc
+      dockerfile: ./../broker-svc/broker-svc.dockerfile
+    restart: always
+    ports:
+      - 8888:8888
+    deploy:
+      mode: replicated
+      replicas: 1
+    environment:
+      TOKEN_SECRET: "your-secret"
+
+  auth-svc:
+    build:
+      context: ./../auth-svc
+      dockerfile: ./../auth-svc/auth-svc.dockerfile
+    restart: always
+    ports:
+      - 8181:8181
+    deploy:
+      mode: replicated
+      replicas: 1
+    environment:
+      DSN: "host=postgres port=5432 user=postgres password=password dbname=users sslmode=disable timezone=UTC connect_timeout=5"
+
+  logger-svc:
+    build:
+      context: ./../logger-svc
+      dockerfile: ./../logger-svc/logger-svc.dockerfile
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  postgres:
+    image: 'postgres:latest'
+    ports:
+      - "5432:5432"
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: users
+    volumes:
+      - ./db-data/postgres/:/var/lib/postgresql/data/
+
+  mongo:
+    image: 'mongo:4.2.16-bionic'
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_USERNAME: admin
+      MONGO_INITDB_PASSWORD: password
+      MONGO_INITDB_DATABASE: logs
+    restart: always
+    volumes:
+      - ./db-data/mongo/:/data/db
