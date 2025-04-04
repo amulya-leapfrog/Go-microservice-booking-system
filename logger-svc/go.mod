@@ -2,11 +2,7 @@ module logger
 
 go 1.23.2
 
-require (
-	github.com/go-chi/chi/v5 v5.2.1
-	github.com/go-chi/cors v1.2.1
-	go.mongodb.org/mongo-driver v1.17.3
-)
+require go.mongodb.org/mongo-driver v1.17.3
 
 require (
 	github.com/golang/snappy v0.0.4 // indirect

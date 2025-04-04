@@ -5,9 +5,8 @@ CREATE TABLE users (
     email VARCHAR(50) UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     password TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-
 -- +goose StatementEnd
 
 -- +goose Down

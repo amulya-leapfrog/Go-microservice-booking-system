@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/rpc"
+	"os"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -20,10 +22,20 @@ const (
 
 var client *mongo.Client
 
+var maxAcceptError int
+
 func main() {
+	maxAcceptErrorStr := os.Getenv("MAX_ACCEPT_ERROR")
+
+	var err error
+	maxAcceptError, err = strconv.Atoi(maxAcceptErrorStr)
+	if err != nil {
+		log.Fatalf("Error converting MAX_ACCEPT_ERROR to integer: %v", err)
+	}
+
 	mongoClient, err := connectToMongo()
 	if err != nil {
-		log.Panic(err)
+		log.Fatal("Error connecting to MongoDB: ", err)
 	}
 	client = mongoClient
 
@@ -32,12 +44,18 @@ func main() {
 
 	defer func() {
 		if err = client.Disconnect(ctx); err != nil {
-			panic(err)
+			log.Fatal("Error disconnecting from MongoDB: ", err)
 		}
 	}()
 
 	err = rpc.Register(new(RPCServer))
-	rpcListen()
+	if err != nil {
+		log.Panic("Error registering Logger RPC server: ", err)
+	}
+
+	if err := rpcListen(); err != nil {
+		log.Panic("Logger RPC server exited with error: ", err)
+	}
 }
 
 func rpcListen() error {
@@ -49,14 +67,27 @@ func rpcListen() error {
 	}
 	defer listen.Close()
 
+	acceptFailures := 0
+
 	for {
-		rpcConn, err := listen.Accept()
+		conn, err := listen.Accept()
 		if err != nil {
-			log.Println("Error accepting rpc connection: ", err)
+			log.Printf("Error accepting connection: %v\n", err)
+			acceptFailures++
+
+			if acceptFailures >= maxAcceptError {
+				log.Printf("Too many accept failures (%d). Shutting down Logger RPC server.\n", acceptFailures)
+				return fmt.Errorf("exceeded max accept failures")
+			}
+
+			// small sleep to avoid spinning too fast
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 
-		go rpc.ServeConn(rpcConn)
+		// reset error count on successful accept
+		acceptFailures = 0
+		go rpc.ServeConn(conn)
 	}
 }
 

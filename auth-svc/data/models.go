@@ -33,7 +33,7 @@ type Models struct {
 
 // User is the structure which holds one user from the database.
 type User struct {
-	ID        int       `json:"id"`
+	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	FullName  string    `json:"fullName"`
 	Password  string    `json:"password"`
@@ -75,14 +75,13 @@ func (u *User) Insert(user User) (int, error) {
 	}
 
 	var newID int
-	stmt := `insert into users (email, password, full_name, created_at)
-		values ($1, $2, $3, $4) returning id`
+	stmt := `insert into users (email, password, full_name)
+		values ($1, $2, $3) returning id`
 
 	err = db.QueryRowContext(ctx, stmt,
 		user.Email,
 		hashedPassword,
 		user.FullName,
-		time.Now(),
 	).Scan(&newID)
 
 	if err != nil {

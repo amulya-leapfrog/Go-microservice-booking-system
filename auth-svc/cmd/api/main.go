@@ -22,7 +22,7 @@ func main() {
 
 	conn := connectToDB()
 	if conn == nil {
-		log.Panicln("Can't connect to Postgres")
+		log.Fatal("Can't connect to Postgres")
 	}
 
 	defer conn.Close()

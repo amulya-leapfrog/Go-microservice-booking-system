@@ -20,8 +20,7 @@ type authResponse struct {
 }
 
 type LoginResponse struct {
-	FullName string `json:"fullName"`
-	Email    string `json:"email"`
+	ID string `json:"id"`
 }
 
 func (app *Config) readJSON(w http.ResponseWriter, r *http.Request, data any) error {

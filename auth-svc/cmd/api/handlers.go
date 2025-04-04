@@ -56,12 +56,12 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 		// password match
 		_, err = newUser.PasswordMatches(requestPayload.AuthData.Password)
 		if err != nil {
-			log.Printf("Login error: %v for id: %d\n", err, newUser.ID)
+			log.Printf("Login error: %v for id: %v\n", err, newUser.ID)
 			app.errorJSON(w, fmt.Errorf("invalid credentials"), http.StatusUnauthorized)
 			return
 		}
 
-		loginMsg := fmt.Sprintf("User with id: %d logged in", newUser.ID)
+		loginMsg := fmt.Sprintf("User with id: %v logged in", newUser.ID)
 		log.Print(loginMsg)
 
 		// log user login
@@ -73,11 +73,10 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 		app.logItemViaRPC(logData)
 
 		// return login success
-		responsePayload.Data.Email = newUser.Email
-		responsePayload.Data.FullName = newUser.FullName
+		responsePayload.Data.ID = newUser.ID
 		responsePayload.Message = "Login success"
 		app.writeJSON(w, http.StatusOK, responsePayload)
-	} else {
+	} else if requestPayload.Action == "signup" {
 		// check for user in database
 		var newUser *data.User
 
@@ -90,7 +89,7 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if newUser != nil {
-			log.Printf("User with id: %d already exists\n", newUser.ID)
+			log.Printf("User with id: %v already exists\n", newUser.ID)
 			responsePayload.Error = true
 			responsePayload.Message = "User already exists"
 			app.writeJSON(w, http.StatusOK, responsePayload)
@@ -124,6 +123,10 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 
 		// return signup success
 		responsePayload.Message = "Signup success"
+		app.writeJSON(w, http.StatusOK, responsePayload)
+	} else {
+		responsePayload.Error = true
+		responsePayload.Message = "Invalid Action"
 		app.writeJSON(w, http.StatusOK, responsePayload)
 	}
 

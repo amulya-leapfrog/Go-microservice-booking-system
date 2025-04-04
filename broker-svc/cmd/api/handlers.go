@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/rpc"
 	"os"
 	"strings"
 	"time"
@@ -39,10 +40,17 @@ type ReservationRequest struct {
 }
 
 type ReservationData struct {
-	RestaurantID    string `json:"restaurantID"`
-	Count           string `json:"count"`
-	ReservationTime string `json:"reservationTime"`
-	Remarks         string `json:"remarks"`
+	ReservationID   string    `json:"id,omitempty"`
+	RestaurantID    string    `json:"restaurantID,omitempty"`
+	UserId          string    `json:"userID,omitempty"`
+	Count           string    `json:"count,omitempty"`
+	ReservationTime string    `json:"reservationTime,omitempty"`
+	Remarks         string    `json:"remarks,omitempty"`
+	CreatedAt       time.Time `json:"createdAt,omitempty"`
+}
+
+type RPCPayload struct {
+	ReservationData ReservationData
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +133,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthRequest) {
 		return
 	}
 
-	token, err := generateToken(auhResponse.Data.Email, auhResponse.Data.FullName)
+	token, err := generateToken(auhResponse.Data.ID)
 	if err != nil {
 		log.Printf("Error generating token: %v\n", err)
 		app.errorJSON(w, err)
@@ -137,7 +145,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthRequest) {
 	app.writeJSON(w, http.StatusAccepted, payload)
 }
 
-func (app *Config) reservation(w http.ResponseWriter, r *http.Request, a ReservationRequest) {
+func (app *Config) reservation(w http.ResponseWriter, r *http.Request, reservationReq ReservationRequest) {
 	tokenString, err := extractToken(r)
 	if err != nil {
 		log.Printf("Error extracting token: %v\n", err)
@@ -145,15 +153,47 @@ func (app *Config) reservation(w http.ResponseWriter, r *http.Request, a Reserva
 		return
 	}
 
-	fullName, email, err := verifyJWT(tokenString)
+	id, err := verifyJWT(tokenString)
 	if err != nil {
 		log.Printf("Error verifying JWT: %v\n", err)
 		app.errorJSON(w, fmt.Errorf("unauthorized"))
 		return
 	}
 
-	// user full name and email to reserve
-	fmt.Println(fullName, email, a)
+	reservationReq.ReservationData.UserId = id
+
+	switch reservationReq.Action {
+	case "add":
+		app.createReservation(w, reservationReq.ReservationData)
+	default:
+		app.errorJSON(w, errors.New("unknown action"))
+	}
+}
+
+func (app *Config) createReservation(w http.ResponseWriter, rd ReservationData) {
+	client, err := rpc.Dial("tcp", "reservation-svc:5002")
+	if err != nil {
+		log.Println("Error connecting to reservation rpc from broker: ", err)
+	}
+
+	var rpcPayload RPCPayload
+	rpcPayload.ReservationData.UserId = rd.UserId
+	rpcPayload.ReservationData.RestaurantID = rd.RestaurantID
+	rpcPayload.ReservationData.Count = rd.Count
+	rpcPayload.ReservationData.ReservationTime = rd.ReservationTime
+	rpcPayload.ReservationData.Remarks = rd.Remarks
+
+	var result string
+	err = client.Call("RPCServer.CreateReservation", rpcPayload, &result)
+	if err != nil {
+		log.Println("Error sending payload to reservation rpc from broker: ", err)
+		app.errorJSON(w, fmt.Errorf("error creating reservation booking"))
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = fmt.Sprintf("Reservation Service!: %s", result)
+	app.writeJSON(w, http.StatusOK, payload)
 }
 
 // ExtractToken extracts and returns the JWT token from the Authorization header
@@ -175,13 +215,12 @@ func extractToken(r *http.Request) (string, error) {
 }
 
 // generateToken generates a JWT token
-func generateToken(email, fullName string) (string, error) {
+func generateToken(id string) (string, error) {
 	// Create the claims
 	claims := jwt.MapClaims{
-		"email":    email,
-		"fullName": fullName,
-		"exp":      time.Now().Add(time.Hour * 1).Unix(), // Expiration time
-		"iat":      time.Now().Unix(),                    // Issued At
+		"id":  id,
+		"exp": time.Now().Add(time.Hour * 1).Unix(), // Expiration time
+		"iat": time.Now().Unix(),                    // Issued At
 	}
 
 	// Create a new token
@@ -197,7 +236,7 @@ func generateToken(email, fullName string) (string, error) {
 }
 
 // VerifyJWT verifies the token and returns the claims (fullName and email in this case)
-func verifyJWT(tokenString string) (string, string, error) {
+func verifyJWT(tokenString string) (string, error) {
 	// Parse the token and validate it with the signing key
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Ensure the token method is what we expect (HS256)
@@ -207,7 +246,7 @@ func verifyJWT(tokenString string) (string, string, error) {
 		return mySigningKey, nil
 	})
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	// Return the token if it's valid
@@ -215,19 +254,18 @@ func verifyJWT(tokenString string) (string, string, error) {
 		// Get the claims (assuming they are stored in MapClaims)
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			return "", "", fmt.Errorf("invalid claims")
+			return "", fmt.Errorf("invalid claims")
 		}
 
-		// Retrieve fullName and email from the claims
-		fullName, fullNameOk := claims["fullName"].(string)
-		email, emailOk := claims["email"].(string)
+		// Retrieve user id from the claims
+		id, idOk := claims["id"].(string)
 
-		if !fullNameOk || !emailOk {
-			return "", "", fmt.Errorf("fullName or email not found in token")
+		if !idOk {
+			return "", fmt.Errorf("userId not found in token")
 		}
 
-		// Return the fullName and email
-		return fullName, email, nil
+		// Return the userID
+		return id, nil
 	}
-	return "", "", fmt.Errorf("invalid token")
+	return "", fmt.Errorf("invalid token")
 }
